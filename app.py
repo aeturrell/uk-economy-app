@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 from pathlib import Path
 from functools import lru_cache
+from datetime import datetime
+import pandasdmx as pdmx
 
 
 def prep_gdp_output_codes():
@@ -22,6 +24,22 @@ def prep_gdp_output_codes():
         hdf[col] = hdf[col].str.lstrip().str.rstrip()
     hdf = hdf.rename(columns={4: "section", 5: "code"})
     return hdf
+
+
+def get_uk_regional_gdp():
+    # current year
+    latest_year = datetime.now().year - 1    
+    # Tell pdmx we want OECD data
+    oecd = pdmx.Request("OECD")
+    # Set out everything about the request in the format specified by the OECD API
+    data = oecd.data(
+        resource_id="REGION_ECONOM",
+        key="1+2.UKC.SNA_2008.GDP.REG+CURR_PR.ALL.2017+2018+2019+2020/all?",
+    ).to_pandas()
+    # example that works:
+    "https://stats.oecd.org/restsdmx/sdmx.ashx/GetData/REGION_ECONOM/1+2.GBR+UKC+UKC11+UKC12.SNA_2008.GDP.REG+CURR_PR+USD_PPP+REAL_PR+REAL_PPP+PC+PC_CURR_PR+PC_USD_PPP+PC_REAL_PR+PC_REAL_PPP.ALL.2001+2002+2003+2004+2005+2006+2007+2008+2009+2010+2011+2012+2013+2014+2015+2016+2017+2018+2019+2020/all?"
+    df = pd.DataFrame(data).reset_index()
+    df.head()
 
 
 def ons_blue_book_data(code):
@@ -117,6 +135,7 @@ def main():
     ## Output
 
     ### Indices of Production, Construction, and Services
+
     '''
     # Grab the three UK time series
     indices_dicts = {'Production': 'L2KQ',
@@ -127,7 +146,7 @@ def main():
         xf, x_text = ons_qna_data('QNA', value)
         xf['Name'] = key
         df = pd.concat([df, xf], axis=0)
-
+    # Construct the charts
     graph = alt.Chart(df).mark_line(strokeWidth=4).encode(
         x=alt.X('date:T'),
         y='value:Q',
@@ -141,6 +160,13 @@ def main():
     ).interactive()
     st.write(graph)
 
+    # UK Blue Book breakdown of GDP
+    text_for_GDP = r"""
+    ### GDP by output
+    This is output according to the ONS' Blue Book. Click on any component to see more details of that component.
+    """
+    st.write(text_for_GDP)
+
     df = px.data.gapminder().query("year == 2007")
     df = ons_get_gdp_output_with_breakdown()
     fig = px.treemap(df, path=[px.Constant("GDP (£m, current prices)"), 0, 1, 2, 3], values='value',
@@ -150,9 +176,6 @@ def main():
     fig.update_layout(margin = dict(t=50, l=25, r=25, b=25))
     st.write(fig)
 
-    # UK Blue Book breakdown of GDP
-
-    
     # UK regional GVA
     uk_nuts1_gva = pd.read_csv(os.path.join('data', 'nuts1_gva_2016.csv'))
 
@@ -175,9 +198,6 @@ def main():
         width=600,
     ).interactive()
     st.write(graph_lms)
-
-    # Sectoral GVAs, using the blue book, eg
-    # education is 'bb', 'KKN5'; mining and quarrying is KKD7, KKE3 for manuf.
 
 
 if __name__ == "__main__":
