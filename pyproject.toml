@@ -16,6 +16,7 @@ watchdog = "^2.1.6"
 plotly = "^5.3.1"
 openpyxl = "^3.0.9"
 black = "^21.9b0"
+statsmodels = "^0.13.1"
 
 [tool.poetry.dev-dependencies]
 
