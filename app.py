@@ -8,6 +8,8 @@ import plotly.express as px
 from pathlib import Path
 from functools import lru_cache
 import statsmodels.formula.api as smf
+from datetime import datetime
+import pandasdmx as pdmx
 
 plt.style.use(
     "https://github.com/aeturrell/coding-for-economists/raw/main/plot_style.txt"
@@ -28,6 +30,22 @@ def prep_gdp_output_codes():
         hdf[col] = hdf[col].str.lstrip().str.rstrip()
     hdf = hdf.rename(columns={4: "section", 5: "code"})
     return hdf
+
+
+def get_uk_regional_gdp():
+    # current year
+    latest_year = datetime.now().year - 1    
+    # Tell pdmx we want OECD data
+    oecd = pdmx.Request("OECD")
+    # Set out everything about the request in the format specified by the OECD API
+    data = oecd.data(
+        resource_id="REGION_ECONOM",
+        key="1+2.UKC.SNA_2008.GDP.REG+CURR_PR.ALL.2017+2018+2019+2020/all?",
+    ).to_pandas()
+    # example that works:
+    "https://stats.oecd.org/restsdmx/sdmx.ashx/GetData/REGION_ECONOM/1+2.GBR+UKC+UKC11+UKC12.SNA_2008.GDP.REG+CURR_PR+USD_PPP+REAL_PR+REAL_PPP+PC+PC_CURR_PR+PC_USD_PPP+PC_REAL_PR+PC_REAL_PPP.ALL.2001+2002+2003+2004+2005+2006+2007+2008+2009+2010+2011+2012+2013+2014+2015+2016+2017+2018+2019+2020/all?"
+    df = pd.DataFrame(data).reset_index()
+    df.head()
 
 
 @st.cache
