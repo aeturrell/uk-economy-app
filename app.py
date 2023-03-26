@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import requests
 import matplotlib.pyplot as plt
+import matplotlib_inline.backend_inline
 import plotly.express as px
 from pathlib import Path
 from functools import lru_cache
@@ -12,8 +13,9 @@ from datetime import datetime
 import pandasdmx as pdmx
 
 plt.style.use(
-    "https://github.com/aeturrell/coding-for-economists/raw/main/plot_style.txt"
+    "plot_style.txt"
 )
+matplotlib_inline.backend_inline.set_matplotlib_formats("svg")
 
 
 @st.cache
@@ -258,10 +260,11 @@ def plot_beveridge_curve():
                 arrowstyle="->", connectionstyle="angle3,angleA=0,angleB=-90"
             ),
         )
+    ax.set_title("Vacancy rate, %")
     ax.set_xlabel("Unemployment rate, %")
-    ax.set_ylabel("Vacancy rate, %")
     ax.grid(which="major", axis="both", lw=0.2)
     plt.tight_layout()
+    plt.suptitle("Beveridge Curve")
     st.pyplot(fig)
 
 
@@ -328,16 +331,17 @@ def plot_phillips_curve():
         )
     ax.grid(which="major", axis="both", lw=0.2)
     ax.set_xlabel("Mean unemployment rate, %")
-    ax.set_ylabel("Mean nominal wage growth, %")
     ax.tick_params(axis="both", which="both", labelsize=10)
     ax.legend(frameon=False)
-    ax.set_title("Phillips curve")
+    ax.set_title("Mean nominal wage growth, %")
+    plt.suptitle("Phillips Curve")
     plt.tight_layout()
     st.pyplot(fig)
 
 
 def main():
     """Func description"""
+    st.set_page_config(layout="wide")
     r"""
     # The UK economy in charts
 
@@ -378,11 +382,21 @@ def main():
     ### Beveridge curve
     """
     )
-    plot_beveridge_curve()
     st.write("""
     ### Phillips curve
     """)
-    plot_phillips_curve()
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        plot_beveridge_curve()
+
+    with col2:
+        st.header("A dog")
+        plot_phillips_curve()
+
+    with col3:
+        st.header("An owl")
+        st.image("https://static.streamlit.io/examples/owl.jpg")
 
 
 if __name__ == "__main__":
