@@ -4,39 +4,64 @@ import pandas as pd
 import numpy as np
 import requests
 import matplotlib.pyplot as plt
-import matplotlib_inline.backend_inline
 import plotly.express as px
 from pathlib import Path
-from functools import lru_cache
 import statsmodels.formula.api as smf
 from datetime import datetime
 import pandasdmx as pdmx
+from typing import Tuple
 
-plt.style.use(
-    "plot_style.txt"
-)
-matplotlib_inline.backend_inline.set_matplotlib_formats("svg")
+plt.style.use("plot_style.txt")
+plt.rcParams["figure.dpi"] = 300
 
 
-@st.cache
-def prep_gdp_output_codes():
+@st.cache_data
+def prep_gdp_output_codes() -> pd.DataFrame():
+    """Extracts the hierarchical GDP codes from a static ONS file with them all in.
+
+    Returns:
+        pd.DataFrame: Data frame that includes columns section and code, mapping GDP sections into their codes.
+    """
     hdf = pd.read_excel(Path("data", "uk_gdp_output_hierarchy.xlsx"), header=None)
     hdf = hdf.dropna(how="all", axis=1)
     for i in range(3):
         hdf.iloc[i, :] = hdf.iloc[i, :].fillna(method="ffill")
     hdf = hdf.T
     hdf["total"] = hdf[3].str.contains("Total")
-    hdf = hdf.query("total==False")
-    hdf = hdf.drop("total", axis=1)
+    non_total_hdf = hdf.query("total==False")
+    non_total_hdf = non_total_hdf.drop("total", axis=1)
     for col in range(5):
-        hdf[col] = hdf[col].str.lstrip().str.rstrip()
-    hdf = hdf.rename(columns={4: "section", 5: "code"})
-    return hdf
+        non_total_hdf[col] = non_total_hdf[col].str.lstrip().str.rstrip()
+    non_total_hdf = non_total_hdf.rename(columns={4: "section", 5: "code"})
+    return non_total_hdf
+
+
+@st.cache_data(max_entries=1000)
+def grab_ONS_time_series_data(dataset_id: str, timeseries_id: str):
+    """This function grabs specified time series from the ONS API.
+
+    Args:
+        dataset_id (str): eg Consumer Price Inflation time series (MM23)
+        timeseries_id (str): eg RPI for UK holidays (CHMS)
+
+    Returns:
+        JSON: Contains series.
+    """
+    api_endpoint = "https://api.ons.gov.uk/"
+    api_params = {"dataset": dataset_id, "timeseries": timeseries_id}
+    url = (
+        api_endpoint
+        + "/".join(
+            [x + "/" + y for x, y in zip(api_params.keys(), api_params.values())][::-1]
+        )
+        + "/data"
+    )
+    return requests.get(url).json()
 
 
 def get_uk_regional_gdp():
     # current year
-    latest_year = datetime.now().year - 1    
+    latest_year = datetime.now().year - 1
     # Tell pdmx we want OECD data
     oecd = pdmx.Request("OECD")
     # Set out everything about the request in the format specified by the OECD API
@@ -50,8 +75,16 @@ def get_uk_regional_gdp():
     df.head()
 
 
-@st.cache
-def ons_blue_book_data(code):
+@st.cache_data(max_entries=1000)
+def ons_blue_book_data(code: str) -> pd.DataFrame:
+    """Retrieve data from ONS Blue Book given GDP component code.
+
+    Args:
+        code (str): GDP component code, eg KKN5.
+
+    Returns:
+        pd.DataFrame: Blue Book entry for this particular code.
+    """
     data = grab_ONS_time_series_data("BB", code)
     xf = pd.DataFrame(pd.json_normalize(data["years"]))
     xf = xf[["year", "value"]]
@@ -63,9 +96,8 @@ def ons_blue_book_data(code):
     return xf
 
 
-@st.cache
-@lru_cache(maxsize=32)
-def ons_get_gdp_output_with_breakdown():
+@st.cache_data(show_spinner="Fetching data from ONS API...", max_entries=100)
+def ons_get_gdp_output_with_breakdown() -> pd.DataFrame:
     df = prep_gdp_output_codes()
     xf = pd.DataFrame()
     for code in df["code"].unique():
@@ -90,25 +122,16 @@ def ons_get_gdp_output_with_breakdown():
     return df
 
 
-@st.cache
-def grab_ONS_time_series_data(dataset_id, timeseries_id):
+@st.cache_data()
+def ons_clean_qna_data(data) -> pd.DataFrame:
+    """Cleans Quarterly National Accounts data retrieved from ONS API.
+
+    Args:
+        data (JSON): JSON as returned from particular code retrieval.
+
+    Returns:
+        pd.DataFrame: Cleaned data in dataframe.
     """
-    This function grabs specified time series from the ONS API.
-
-    """
-    api_endpoint = "https://api.ons.gov.uk/"
-    api_params = {"dataset": dataset_id, "timeseries": timeseries_id}
-    url = (
-        api_endpoint
-        + "/".join(
-            [x + "/" + y for x, y in zip(api_params.keys(), api_params.values())][::-1]
-        )
-        + "/data"
-    )
-    return requests.get(url).json()
-
-
-def ons_clean_qna_data(data):
     if data["quarters"] != []:
         df = pd.DataFrame(pd.json_normalize(data["quarters"]))
         df["date"] = (
@@ -127,8 +150,8 @@ def ons_clean_qna_data(data):
     return df
 
 
-@lru_cache(maxsize=32)
-def ons_qna_data(dataset_id, timeseries_id):
+@st.cache_data(show_spinner="Fetching data from ONS API...", max_entries=1000)
+def ons_qna_data(dataset_id: str, timeseries_id: str) -> Tuple[pd.DataFrame, str]:
     data = grab_ONS_time_series_data(dataset_id, timeseries_id)
     desc_text = data["description"]["title"]
     df = ons_clean_qna_data(data)
@@ -207,6 +230,28 @@ def plot_labour_market_indicators():
         .interactive()
     )
     st.write(graph_lms)
+
+
+def plotly_labour_market_indicators():
+    """E, U, and inactivity. TODO change to monthly LMS (series codes are same)"""
+    indices_dicts_lms = {
+        "Employment": "LF24",
+        "Unemployment": "MGSX",
+        "Inactivity": "LF2S",
+    }
+    df_lms = pd.DataFrame()
+    for key, value in indices_dicts_lms.items():
+        xf, x_text = ons_qna_data("LMS", value)
+        xf["Name"] = key
+        df_lms = pd.concat([df_lms, xf], axis=0)
+    fig = px.line(
+        df_lms.reset_index(),
+        x="date",
+        y="value",
+        color="Name",
+        line_dash="Name",
+    )
+    st.plotly_chart(fig)
 
 
 def plot_beveridge_curve():
@@ -358,9 +403,10 @@ def main():
     """
     )
     df = ons_get_gdp_output_with_breakdown()
+    year_blue_book = df.loc[0, "year"]
     fig = px.treemap(
         df,
-        path=[px.Constant("GDP (£m, current prices)"), 0, 1, 2, 3],
+        path=[px.Constant(f"GDP (£m, current prices, {year_blue_book})"), 0, 1, 2, 3],
         values="value",
         hover_data=["title"],
         color_discrete_sequence=px.colors.qualitative.Bold,
@@ -377,26 +423,24 @@ def main():
     )
     # Labour market indicators
     plot_labour_market_indicators()
+    plotly_labour_market_indicators()
     st.write(
         """
     ### Beveridge curve
     """
     )
-    st.write("""
+    st.write(
+        """
     ### Phillips curve
-    """)
-    col1, col2, col3 = st.columns(3)
+    """
+    )
+    col1, col2 = st.columns(2)
 
     with col1:
         plot_beveridge_curve()
 
     with col2:
-        st.header("A dog")
         plot_phillips_curve()
-
-    with col3:
-        st.header("An owl")
-        st.image("https://static.streamlit.io/examples/owl.jpg")
 
 
 if __name__ == "__main__":
