@@ -1,5 +1,4 @@
 import streamlit as st
-import altair as alt
 import pandas as pd
 import numpy as np
 import requests
@@ -158,52 +157,47 @@ def ons_qna_data(dataset_id: str, timeseries_id: str) -> Tuple[pd.DataFrame, str
     return df, desc_text
 
 
-def visualize_line(df, x_axis, y_axis, scale, widths, ylabel, title):
-    height = 350
-    graph = (
-        alt.Chart(df)
-        .mark_line(strokeWidth=4)
-        .encode(
-            x=x_axis + ":T",
-            y=alt.Y(y_axis + ":Q", scale=scale, title=ylabel),
-            tooltip=[y_axis],
-        )
-        .properties(width=widths, title=title, height=height)
-        .interactive()
-    )
-    st.write(graph)
+@st.cache_data
+def data_on_output_indices() -> pd.DataFrame:
+    """Retrieve production, construction, and services indices.
 
-
-def plot_indices_of_output():
-    # Grab the three UK time series
+    Returns:
+        pd.DataFrame: dataframe with series
+    """
     indices_dicts = {"Production": "L2KQ", "Construction": "L2N8", "Services": "L2NC"}
     df = pd.DataFrame()
     for key, value in indices_dicts.items():
         xf, x_text = ons_qna_data("QNA", value)
         xf["Name"] = key
         df = pd.concat([df, xf], axis=0)
+    return df
 
-    graph = (
-        alt.Chart(df)
-        .mark_line(strokeWidth=4)
-        .encode(
-            x=alt.X("date:T"),
-            y="value:Q",
-            color=alt.Color("Name:N", legend=None),
-            tooltip=["value"],
-        )
-        .properties(
-            width=200,
-            height=200,
-        )
-        .facet(column="Name:N")
-        .interactive()
+
+def plot_index_of_output(df: pd.DataFrame) -> None:
+    """Plots indices of output using plotly.
+
+    Args:
+        series_name (str): One of "Production", "Construction", or "Services"
+    """
+    df = df.rename(columns={"date": "Date", "value": "Index"})
+    fig = px.line(
+        df,
+        x="Date",
+        y="Index",
+        color="Name",
+        line_dash="Name",
+        title=f"Indices of output",
     )
-    st.write(graph)
+    st.plotly_chart(fig)
 
 
-def plot_labour_market_indicators():
-    # The labour market. TODO change to monthly LMS (series codes are same)
+@st.cache_data()
+def data_for_labour_market_indicators() -> pd.DataFrame:
+    """Retrieve Employment, Unemployment, and Inactivity. TODO change to monthly LMS (series codes are same).
+
+    Returns:
+        pd.DataFrame: Dataframe with E, U, and Inact.
+    """
     indices_dicts_lms = {
         "Employment": "LF24",
         "Unemployment": "MGSX",
@@ -214,47 +208,30 @@ def plot_labour_market_indicators():
         xf, x_text = ons_qna_data("LMS", value)
         xf["Name"] = key
         df_lms = pd.concat([df_lms, xf], axis=0)
-    graph_lms = (
-        alt.Chart(df_lms)
-        .mark_line(strokeWidth=4)
-        .encode(
-            x=alt.X("date:T", title=""),
-            y=alt.Y("value:Q", title="%"),
-            color="Name:N",
-            tooltip=["value"],
-        )
-        .properties(
-            title="Labour market indicators",
-            width=600,
-        )
-        .interactive()
-    )
-    st.write(graph_lms)
+    return df_lms
 
 
-def plotly_labour_market_indicators():
-    """E, U, and inactivity. TODO change to monthly LMS (series codes are same)"""
-    indices_dicts_lms = {
-        "Employment": "LF24",
-        "Unemployment": "MGSX",
-        "Inactivity": "LF2S",
-    }
-    df_lms = pd.DataFrame()
-    for key, value in indices_dicts_lms.items():
-        xf, x_text = ons_qna_data("LMS", value)
-        xf["Name"] = key
-        df_lms = pd.concat([df_lms, xf], axis=0)
+def plotly_labour_market_indicators(df_lms: pd.DataFrame) -> None:
+    """Plot E, U, and inactivity."""
+
     fig = px.line(
         df_lms.reset_index(),
         x="date",
         y="value",
         color="Name",
         line_dash="Name",
+        title="Employment and activity, %",
     )
     st.plotly_chart(fig)
 
 
-def plot_beveridge_curve():
+@st.cache_data()
+def data_for_beveridge_curve() -> pd.DataFrame:
+    """Retrieves ONS series relevant to Beveridge curve.
+
+    Returns:
+        pd.DataFrame: all series in dataframe.
+    """
     indices_dicts_lms = {"Vacancies": "AP2Y", "Unemployment": "MGSX", "Active": "LF2K"}
     df = pd.DataFrame()
     for key, value in indices_dicts_lms.items():
@@ -267,10 +244,19 @@ def plot_beveridge_curve():
     df = df.dropna()
     df["Date"] = df.index
     df["Vacancies"] = 100 * df["Vacancies"].divide(df["Active"])
-    max_u = df["Unemployment"].argmax()
+    return df
+
+
+def plot_beveridge_curve(df: pd.DataFrame) -> None:
+    """Plots Beveridge curve.
+
+    Args:
+        df (pd.DataFrame): dataframe with datetime index, and columns for U and V.
+    """
     # Need to divide vacs by labour force size
     # Need to label most extremal u value
     fig, ax = plt.subplots()
+    max_u = df["Unemployment"].argmax()
     quivx = -df["Unemployment"].diff(-1)
     quivy = -df["Vacancies"].diff(-1)
     # This connects the points
@@ -313,7 +299,13 @@ def plot_beveridge_curve():
     st.pyplot(fig)
 
 
-def plot_phillips_curve():
+@st.cache_data
+def data_phillips_curve() -> pd.DataFrame:
+    """Retrieves weekly earnings and unemployment from ONS API.
+
+    Returns:
+        pd.DataFrame: Dataframe with date, AWE, and U.
+    """
     indices_dicts = {
         "Average weekly earnings": ("LMS", "KAC3"),
         "Unemployment": ("LMS", "MGSX"),
@@ -328,6 +320,15 @@ def plot_phillips_curve():
     df.columns = df.columns.droplevel()
     df = df.dropna()
     df = df.groupby(pd.Grouper(freq="Y")).mean()
+    return df
+
+
+def plot_phillips_curve(df: pd.DataFrame) -> None:
+    """Plot Phillips curve.
+
+    Args:
+        df (pd.DataFrame): Dataframe with date, avg weekly earnings, and unemp.
+    """
     # create year groupings
     df["group"] = pd.cut(
         df.index,
@@ -386,7 +387,7 @@ def plot_phillips_curve():
 
 def main():
     """Func description"""
-    st.set_page_config(layout="wide")
+    # st.set_page_config(layout="wide")
     r"""
     # The UK economy in charts
 
@@ -396,7 +397,8 @@ def main():
 
     ### Indices of Production, Construction, and Services
     """
-    plot_indices_of_output()
+    df_outputs = data_on_output_indices()
+    plot_index_of_output(df_outputs)
     st.write(
         """
     ### UK Blue Book breakdown of GDP
@@ -422,25 +424,12 @@ def main():
     """
     )
     # Labour market indicators
-    plot_labour_market_indicators()
-    plotly_labour_market_indicators()
-    st.write(
-        """
-    ### Beveridge curve
-    """
-    )
-    st.write(
-        """
-    ### Phillips curve
-    """
-    )
-    col1, col2 = st.columns(2)
-
-    with col1:
-        plot_beveridge_curve()
-
-    with col2:
-        plot_phillips_curve()
+    df_lms = data_for_labour_market_indicators()
+    plotly_labour_market_indicators(df_lms)
+    df_bev = data_for_beveridge_curve()
+    df_phl = data_phillips_curve()
+    plot_beveridge_curve(df_bev)
+    plot_phillips_curve(df_phl)
 
 
 if __name__ == "__main__":
