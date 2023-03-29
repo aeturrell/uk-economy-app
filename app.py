@@ -247,6 +247,47 @@ def data_for_beveridge_curve() -> pd.DataFrame:
     return df
 
 
+@st.cache_data()
+def data_cpi_cpih() -> pd.DataFrame():
+    """Retrieves data on ONS CPI, CPIH (change over 12 months)"""
+    indices_dicts_cpi = {"CPI": "D7G7", "CPIH": "L55O"}
+    dataset_id = "MM23"
+    df = pd.DataFrame()
+    for key, value in indices_dicts_cpi.items():
+        json_data = grab_ONS_time_series_data(dataset_id, value)
+        unit = json_data["description"]["unit"]
+        xf = (
+            pd.DataFrame(pd.json_normalize(json_data["months"]))
+            .assign(
+                Date=lambda x: pd.to_datetime(x["date"]),
+                Percent=lambda x: pd.to_numeric(x["value"]),
+            )
+            .set_index("Date")
+            .drop(
+                ["label", "month", "quarter", "sourceDataset", "updateDate", "year"],
+                axis=1,
+            )
+        )
+        xf["Name"] = key
+        xf["unit"] = unit
+        df = pd.concat([df, xf], axis=0)
+    return df
+
+
+def plotly_inflation_indicators(df_cpi: pd.DataFrame) -> None:
+    """Plot CPI and CPIH % over 12 months."""
+
+    fig = px.line(
+        df_cpi.reset_index(),
+        x="Date",
+        y="Percent",
+        color="Name",
+        line_dash="Name",
+        title="Inflation (change over 12 months)",
+    )
+    st.plotly_chart(fig)
+
+
 def plot_beveridge_curve(df: pd.DataFrame) -> None:
     """Plots Beveridge curve.
 
@@ -415,7 +456,15 @@ def main():
     )
     fig.update_layout(margin=dict(t=50, l=25, r=25, b=25))
     st.write(fig)
+    st.write(
+        """
+        ## Inflation
 
+        ### Headline measures
+        """
+    )
+    df_cpi = data_cpi_cpih()
+    plotly_inflation_indicators(df_cpi)
     st.write(
         """
     ## Labour Market
