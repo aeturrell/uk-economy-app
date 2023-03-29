@@ -208,6 +208,7 @@ def data_for_labour_market_indicators() -> pd.DataFrame:
         xf, x_text = ons_qna_data("LMS", value)
         xf["Name"] = key
         df_lms = pd.concat([df_lms, xf], axis=0)
+    df_lms["value"] = pd.to_numeric(df_lms["value"])
     return df_lms
 
 
@@ -474,6 +475,19 @@ def main():
     )
     # Labour market indicators
     df_lms = data_for_labour_market_indicators()
+    list_of_cols = st.columns(3)
+    date_since_chg = df_lms["date"].max() - pd.DateOffset(years=1)
+    delta_colours = ["normal", "inverse", "inverse"]
+    for i, name in enumerate(df_lms["Name"].unique()):
+        xf = df_lms.loc[df_lms["Name"] == name, :]
+        latest_val = xf.iloc[-1, 1]
+        val_at_ref = xf.loc[xf["date"] == date_since_chg, "value"].values[0]
+        ppt_change = latest_val - val_at_ref
+        str_to_display = f"{ppt_change:.2f} pp since {date_since_chg.date()}"
+        list_of_cols[i].metric(
+            name, f"{latest_val}", str_to_display, delta_color=delta_colours[i]
+        )
+
     plotly_labour_market_indicators(df_lms)
     df_bev = data_for_beveridge_curve()
     df_phl = data_phillips_curve()
